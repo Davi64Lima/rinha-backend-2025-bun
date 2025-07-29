@@ -1,15 +1,10 @@
-import { PaymentJob } from "./types";
+import { MessageChannel } from "worker_threads";
 
-const queue: PaymentJob[] = [];
+const channel = new MessageChannel();
+const queuePort = channel.port1;
 
-export const enqueue = (job: PaymentJob) => {
-  queue.push(job);
-}
+export const workerPort = channel.port2;
 
-export const dequeue = (): PaymentJob | undefined => {
-  return queue.shift();
-}
-
-export const queueLength = (): number => {
-  return queue.length;
+export const enqueue = (job: any) => {
+  queuePort.postMessage(job);
 }

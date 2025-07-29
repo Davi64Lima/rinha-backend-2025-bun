@@ -1,13 +1,9 @@
 import { serve } from "bun";
-import { enqueue } from "./queue";
-import { startWorker } from "./worker";
 import { PaymentRequest } from "./types";
 import { getSummary } from "./summary";
 import { wasAlreadyProcessed } from "./idempotency";
+import { send } from "./workerPool";
 
-
-
-startWorker();
 
 serve({
   port: 3000,
@@ -26,10 +22,14 @@ serve({
           return new Response("Already processed", { status: 409 });
         }
 
-        enqueue({ ...data, retries: 3 });
+        send({
+          amount: data.amount,
+          correlationId: data.correlationId,
+        })
 
         return new Response(null, { status: 202 });
-      } catch {
+      } catch (error){
+        console.error(error);
         return new Response("Malformed JSON", { status: 400 });
       }
     }

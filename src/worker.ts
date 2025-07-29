@@ -1,29 +1,13 @@
-import { dequeue, enqueue } from "./queue";
-import { logPayment } from "./summary";
-import { markAsProcessed } from "./idempotency";
-
-import { PaymentJob } from "./types";
+import { parentPort } from "worker_threads";
 import { sendToProcessor } from "./processors";
+import { logPayment } from "./summary";
 
-export const startWorker = () => {
-  setInterval(async () => {
-    const job = dequeue();
-    if (!job) return;
-
-    try {
-      const result = await sendToProcessor(job);
-      logPayment(job.amount, result.processor);
-      markAsProcessed(job.correlationId);
-    } catch (err) {
-      if (job.retries > 0) {
-        job.retries--;
-        setTimeout(() => {
-          console.log(`Retrying ${job.correlationId}, retries left: ${job.retries}`);
-          enqueue(job);
-        }, 10); 
-      } else {
-        console.warn(`Job failed permanently: ${job.correlationId}`);
-      }
-    }
-  }, 1); 
-}
+parentPort!.on('message', async (job) => {
+  try {
+    const result = await sendToProcessor(job);
+    logPayment(job.amount, result.processor);
+    parentPort!.postMessage({ status: 'ok', correlationId: job.correlationId });
+  } catch (err) {
+    parentPort!.postMessage({ status: 'fail', correlationId: job.correlationId });
+  }
+});
