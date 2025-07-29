@@ -1,0 +1,2 @@
+entrypoint = "src/main.ts"
+bun = "1.1.0"
