@@ -5,12 +5,18 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "start": "bun dist/index.js"
+    "start": "bun dist/main.js"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/ioredis": "^5.0.0",
+    "@types/worker-threads-pool": "^2.0.4"
   },
   "peerDependencies": {
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "ioredis": "^5.6.1",
+    "worker-threads-pool": "^2.0.0"
   }
 }

@@ -1,8 +1,7 @@
 import { serve } from "bun";
 import { PaymentRequest } from "./types";
-import { getSummary } from "./summary";
-import { wasAlreadyProcessed } from "./idempotency";
-import { send } from "./workerPool";
+import  redis  from './cache'
+import { getSummary } from "./payment-summary";
 
 
 serve({
@@ -18,14 +17,13 @@ serve({
           return new Response("Invalid payload", { status: 400 });
         }
 
-        if (wasAlreadyProcessed(data.correlationId)) {
-          return new Response("Already processed", { status: 409 });
-        }
+        console.log(data);
 
-        send({
-          amount: data.amount,
-          correlationId: data.correlationId,
-        })
+        await redis.xadd(
+          "requests",
+          "*",
+          "data", JSON.stringify(data)
+        );
 
         return new Response(null, { status: 202 });
       } catch (error){
@@ -42,7 +40,7 @@ serve({
         return new Response("Missing 'from' or 'to'", { status: 400 });
       }
     
-      const result = getSummary(from, to);
+      const result = await getSummary(from, to);
     
       return new Response(JSON.stringify(result), {
         status: 200,
