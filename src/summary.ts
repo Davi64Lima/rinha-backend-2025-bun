@@ -10,8 +10,6 @@ type PaymentEntry = {
 
 export const logPayment = async (timestamp: number, amount: number, processor: ProcessorType) => {
   const entry: PaymentEntry = { timestamp, amount, processor };
-  console.log('entry>>',entry);
-
   await redis.lpush('payments_list', JSON.stringify(entry));
 };
 
@@ -39,7 +37,6 @@ export const getSummary = async (from: string, to: string) => {
       const { timestamp, amount, processor }  = payment;
       
       if (timestamp >= fromTime && timestamp <= toTime) {
-        console.log(payment);
         summary[processor].totalRequests++;
         summary[processor].totalAmount += amount;
       }
