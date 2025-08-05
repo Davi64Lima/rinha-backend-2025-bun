@@ -1,16 +1,13 @@
 import { serve } from "bun";
-import { enqueue } from "./queue";
-import { startWorker } from "./worker";
 import { PaymentRequest } from "./types";
-import { getSummary } from "./summary";
-import { wasAlreadyProcessed } from "./idempotency";
+import { getSummary, logPayment } from "./summary";
+import { CONFIG } from "./config";
+import {ProcessorType} from './types'
 
 
-
-startWorker();
 
 serve({
-  port: 3000,
+  port: 9999,
   fetch: async (req: Request) => {
     const url = new URL(req.url);
 
@@ -22,13 +19,22 @@ serve({
           return new Response("Invalid payload", { status: 400 });
         }
 
-        if (wasAlreadyProcessed(data.correlationId)) {
-          return new Response("Already processed", { status: 409 });
+        const payment = {
+          correlationId: data.correlationId,
+          amount: data.amount,
+          requestedAt: new Date().toISOString()
         }
 
-        enqueue({ ...data, retries: 3 });
+        const response = await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/payments`, {
+          method: 'POST',
+          body : JSON.stringify(payment)
+        })
 
-        return new Response(null, { status: 202 });
+        if (response.ok) {
+          logPayment(new Date(payment.requestedAt).getTime(),payment.amount,ProcessorType.default)
+        }
+
+        return new Response(null, { status: 200 });
       } catch {
         return new Response("Malformed JSON", { status: 400 });
       }

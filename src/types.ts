@@ -7,3 +7,7 @@ export type PaymentRequest = {
     retries: number;
   }
   
+ export enum ProcessorType {
+  default = 'default',
+  fallback = 'fallback'
+ }

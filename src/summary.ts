@@ -1,4 +1,4 @@
-type ProcessorType = "default" | "fallback";
+import {ProcessorType} from './types'
 
 type PaymentEntry = {
   timestamp: number; // em ms
@@ -8,9 +8,9 @@ type PaymentEntry = {
 
 const payments: PaymentEntry[] = [];
 
-export const logPayment = (amount: number, processor: ProcessorType) => {
+export const logPayment = (timestamp:number, amount: number, processor: ProcessorType) => {
   payments.push({
-    timestamp: Date.now(),
+    timestamp,
     amount,
     processor,
   });
