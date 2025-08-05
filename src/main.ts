@@ -25,12 +25,14 @@ serve({
           requestedAt: new Date().toISOString()
         }
 
+
         const response = await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/payments`, {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body : JSON.stringify(payment)
         })
-
-        console.log(response);
 
         if (response.ok) {
           logPayment(new Date(payment.requestedAt).getTime(),payment.amount,ProcessorType.default)
@@ -56,6 +58,28 @@ serve({
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/purge-payments") {
+      try {
+        Promise.all([fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
+          method: 'POST',
+          headers: {
+            'X-Rinha-Token':'123'
+          }
+        }
+        ),
+        fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
+          method: 'POST',
+          headers: {
+            'X-Rinha-Token':'123'
+          }
+        }
+        )])
+        return new Response('payments flush', { status: 202 });
+      } catch (err) {
+        return new Response('error flush payments', {status:500})
+      }
     }
     
     

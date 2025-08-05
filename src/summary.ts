@@ -14,15 +14,11 @@ export const logPayment = (timestamp:number, amount: number, processor: Processo
     amount,
     processor,
   });
-
-  console.log(payments);
 }
 
 export const getSummary = (from: string, to: string) => {
   const fromTime = new Date(from).getTime();
   const toTime = new Date(to).getTime();
-
-  console.log(payments);
 
   const summary = {
     default: {
