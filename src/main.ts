@@ -2,10 +2,13 @@ import { serve } from "bun";
 import { PaymentRequest } from "./types";
 import  redis  from './cache'
 import { getSummary } from "./payment-summary";
+import {processorPayments} from "./worker"
+import { CONFIG } from "./config";
+
 
 
 serve({
-  port: 3000,
+  port: 9999,
   fetch: async (req: Request) => {
     const url = new URL(req.url);
 
@@ -17,15 +20,20 @@ serve({
           return new Response("Invalid payload", { status: 400 });
         }
 
-        console.log(data);
-
         await redis.xadd(
           "requests",
           "*",
           "data", JSON.stringify(data)
-        );
+        )
 
-        return new Response(null, { status: 202 });
+        const result = await redis.xrange("requests", "-", "+", "COUNT", 10);
+        console.log(result);
+        if (result.length===10) {
+          console.log('chamei');
+        processorPayments(result)
+        }
+
+        return new Response('payment registred', { status: 202 });
       } catch (error){
         console.error(error);
         return new Response("Malformed JSON", { status: 400 });
@@ -46,6 +54,30 @@ serve({
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/purge-payments") {
+      try {
+        Promise.all([fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
+          method: 'POST',
+          headers: {
+            'X-Rinha-Token':'123'
+          }
+        }
+        ),
+        fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
+          method: 'POST',
+          headers: {
+            'X-Rinha-Token':'123'
+          }
+        }
+        )])
+        redis.flushall()
+
+        return new Response('payments flush', { status: 202 });
+      } catch (err) {
+        return new Response('error flush payments', {status:500})
+      }
     }
     
     
