@@ -30,6 +30,8 @@ serve({
           body : JSON.stringify(payment)
         })
 
+        console.log(response);
+
         if (response.ok) {
           logPayment(new Date(payment.requestedAt).getTime(),payment.amount,ProcessorType.default)
         }
