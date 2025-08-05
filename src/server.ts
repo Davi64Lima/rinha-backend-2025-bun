@@ -3,6 +3,8 @@ import { PaymentRequest } from "./types";
 import { getSummary, logPayment } from "./summary";
 import { CONFIG } from "./config";
 import {ProcessorType} from './types'
+import { redis } from "./cache";
+import { getHealthProcessor } from "./health";
 
 
 
@@ -25,17 +27,30 @@ serve({
           requestedAt: new Date().toISOString()
         }
 
+        const processor = await getHealthProcessor()
 
-        const response = await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/payments`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body : JSON.stringify(payment)
-        })
+        let response
+        
+        if (processor === ProcessorType.default) {
+          response = await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/payments`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body : JSON.stringify(payment)
+         })
+        } else {
+          response = await fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/payments`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body : JSON.stringify(payment)
+         })
+        }
 
         if (response.ok) {
-          logPayment(new Date(payment.requestedAt).getTime(),payment.amount,ProcessorType.default)
+          logPayment(new Date(payment.requestedAt).getTime(),payment.amount,processor)
         }
 
         return new Response(null, { status: 200 });
@@ -52,7 +67,7 @@ serve({
         return new Response("Missing 'from' or 'to'", { status: 400 });
       }
     
-      const result = getSummary(from, to);
+      const result = await getSummary(from, to);
     
       return new Response(JSON.stringify(result), {
         status: 200,
@@ -75,7 +90,11 @@ serve({
             'X-Rinha-Token':'123'
           }
         }
-        )])
+        ),
+        redis.send("FLUSHALL",[])
+      ])
+
+
         return new Response('payments flush', { status: 202 });
       } catch (err) {
         return new Response('error flush payments', {status:500})

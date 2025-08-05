@@ -1,22 +1,22 @@
 import {ProcessorType} from './types'
+import {redis} from './cache'
+
 
 type PaymentEntry = {
-  timestamp: number; // em ms
+  timestamp: number;
   amount: number;
   processor: ProcessorType;
 };
 
-const payments: PaymentEntry[] = [];
+export const logPayment = async (timestamp: number, amount: number, processor: ProcessorType) => {
+  const entry: PaymentEntry = { timestamp, amount, processor };
+  console.log('entry>>',entry);
 
-export const logPayment = (timestamp:number, amount: number, processor: ProcessorType) => {
-  payments.push({
-    timestamp,
-    amount,
-    processor,
-  });
-}
+  await redis.lpush('payments_list', JSON.stringify(entry));
+};
 
-export const getSummary = (from: string, to: string) => {
+
+export const getSummary = async (from: string, to: string) => {
   const fromTime = new Date(from).getTime();
   const toTime = new Date(to).getTime();
 
@@ -31,13 +31,22 @@ export const getSummary = (from: string, to: string) => {
     },
   };
 
-  for (const p of payments) {
-    if (p.timestamp >= fromTime && p.timestamp <= toTime) {
-      const entry = summary[p.processor];
-      entry.totalRequests++;
-      entry.totalAmount += p.amount;
+  const rawEntries = await redis.send("LRANGE",['payments_list', "0", "-1"])
+
+  for (const raw of rawEntries) {
+    try {
+      const payment:PaymentEntry = JSON.parse(raw);
+      const { timestamp, amount, processor }  = payment;
+      
+      if (timestamp >= fromTime && timestamp <= toTime) {
+        console.log(payment);
+        summary[processor].totalRequests++;
+        summary[processor].totalAmount += amount;
+      }
+    } catch (error) {
+      console.error('Erro ao parsear item da lista:', error);
     }
   }
 
   return summary;
-}
+};
