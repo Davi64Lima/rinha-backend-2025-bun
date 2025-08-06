@@ -1,5 +1,5 @@
 import { CONFIG } from "./config"
-import { redis } from "./cache";
+const redis = Bun.redis;
 import { ProcessorType } from "./types";
 
 export const getHealthProcessor = async (): Promise<ProcessorType> => {

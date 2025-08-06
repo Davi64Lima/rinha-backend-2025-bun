@@ -2,7 +2,7 @@ import { serve } from "bun";
 import { PaymentRequest, ProcessorType } from "./types";
 import { getSummary, logPayment } from "./summary";
 import { CONFIG } from "./config";
-import { redis } from "./cache";
+const redis = Bun.redis;
 import { getHealthProcessor } from "./health";
 
 // ----------------------
@@ -52,10 +52,9 @@ serve({
           requestedAt: new Date().toISOString()
         };
 
-        // Enfileira o processamento para não travar o handler
+
         paymentQueue.push(async () => {
           const processor = await getHealthProcessor();
-
           const url = processor === ProcessorType.default
             ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
             : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
@@ -71,7 +70,6 @@ serve({
           }
         });
 
-        // Responde logo
         return new Response(null, { status: 202 });
       } catch {
         return new Response("Malformed JSON", { status: 400 });
@@ -98,21 +96,23 @@ serve({
     // POST /purge-payments
     if (req.method === "POST" && url.pathname === "/purge-payments") {
       try {
-        await Promise.all([
-          fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
+          await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
             method: 'POST',
             headers: { 'X-Rinha-Token': '123' }
-          }),
-          fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
+          })
+
+          await fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
             method: 'POST',
             headers: { 'X-Rinha-Token': '123' }
-          }),
-          redis.send("FLUSHALL", [])
-        ]);
+          })
+
+          await redis.send("FLUSHALL", [])
+        
 
         return new Response('payments flush', { status: 202 });
       } catch (err) {
-        return new Response('error flush payments', { status: 500 });
+        console.error(err);
+        return new Response('internal server error', { status: 500 });
       }
     }
 

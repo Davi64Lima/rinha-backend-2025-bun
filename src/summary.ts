@@ -1,5 +1,5 @@
 import {ProcessorType} from './types'
-import {redis} from './cache'
+const redis = Bun.redis;
 
 
 type PaymentEntry = {

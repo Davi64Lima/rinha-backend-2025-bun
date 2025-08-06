@@ -1,30 +1,32 @@
 # ------------------------
-# Etapa 1: build
+# Etapa 1: Build com dependências
 # ------------------------
-    FROM oven/bun:1.1.13 AS builder
+    FROM oven/bun:1.2.19 AS builder
 
-    # Define diretório de trabalho
     WORKDIR /app
     
-    # Copia arquivos de projeto
+    # Copia apenas os arquivos essenciais primeiro (para cache eficiente)
+    COPY bun.lock package.json tsconfig.json ./
+    
+    # Instala apenas produção, sem cache local
+    RUN bun install --production --no-install-cache
+    
+    # Copia o restante do código (após instalar dependências p/ cache otimizado)
     COPY . .
     
-    # Instala dependências
-    RUN bun install --production
-    
     # ------------------------
-    # Etapa 2: imagem final
+    # Etapa 2: Runtime (mínimo possível)
     # ------------------------
-    FROM oven/bun:1.1.13-slim
+    FROM oven/bun:1.2.19-slim AS runtime
     
     WORKDIR /app
     
-    # Copia apenas arquivos necessários
+    # Copia o app pronto da etapa de build
     COPY --from=builder /app /app
     
-    # Exponha a porta que o Bun irá servir (9999)
+    # Exponha a porta do app (ajuste conforme sua app escuta)
     EXPOSE 3000
     
-    # Comando padrão
+    # Define o comando default
     CMD ["bun", "src/main.ts"]
     
