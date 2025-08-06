@@ -81,10 +81,6 @@ serve({
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
 
-      if (!from || !to) {
-        return new Response("Missing 'from' or 'to'", { status: 400 });
-      }
-
       const result = await getSummary(from, to);
 
       return new Response(JSON.stringify(result), {

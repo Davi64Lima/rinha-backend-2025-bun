@@ -14,10 +14,7 @@ export const logPayment = async (timestamp: number, amount: number, processor: P
 };
 
 
-export const getSummary = async (from: string, to: string) => {
-  const fromTime = new Date(from).getTime();
-  const toTime = new Date(to).getTime();
-
+export const getSummary = async (from: string | null, to: string | null) => {
   const summary = {
     default: {
       totalRequests: 0,
@@ -28,6 +25,31 @@ export const getSummary = async (from: string, to: string) => {
       totalAmount: 0,
     },
   };
+  
+  if (from === null || to === null) {
+    const rawEntries = await redis.send("LRANGE",['payments_list', "0", "-1"])
+    if (rawEntries.length === 0) {
+      return summary
+    }
+
+    for (const raw of rawEntries) {
+    try {
+      const payment:PaymentEntry = JSON.parse(raw);
+      const { timestamp, amount, processor }  = payment;
+      
+        summary[processor].totalRequests++;
+        summary[processor].totalAmount += amount;
+      
+    } catch (error) {
+      console.error('Erro ao parsear item da lista:', error);
+    }
+  }
+  }
+
+  const fromTime = new Date(from).getTime();
+  const toTime = new Date(to).getTime();
+
+
 
   const rawEntries = await redis.send("LRANGE",['payments_list', "0", "-1"])
 
