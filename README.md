@@ -78,15 +78,15 @@ X-Rinha-Token: 123
 
 ## ⚙️ Funcionalidades
 
-### 🧠 Balanceamento inteligente entre processadores via /payments/service-health
+- 🧠 Balanceamento inteligente entre processadores via /payments/service-health
 
-### 🔁 Fila assíncrona in-memory para evitar sobrecarga e garantir ordenação
+- 🔁 Fila assíncrona in-memory para evitar sobrecarga e garantir ordenação
 
-### 🧮 Sumarização de métricas por intervalo de tempo com Redis (LPUSH + LRANGE)
+- 🧮 Sumarização de métricas por intervalo de tempo com Redis (LPUSH + LRANGE)
 
-### 🔒 Semáforo Redis via SET NX EX para controle de verificação de saúde
+- 🔒 Semáforo Redis via SET NX EX para controle de verificação de saúde
 
-### ⚡ Cache TTL do processador mais rápido por até 7 segundos
+- ⚡ Cache TTL do processador mais rápido por até 7 segundos
 
 ---
 
