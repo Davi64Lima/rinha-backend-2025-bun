@@ -20,21 +20,28 @@ const enqueuePayment = (task: () => Promise<void>) => {
   }
 };
 
+const MAX_CONCURRENCY = 10;
+const runningTasks = new Set<Promise<void>>();
+
 const processQueue = async () => {
   while (true) {
-    if (paymentQueue.length === 0) {
-      await new Promise<void>((resolve) => (queueNotifier = resolve));
-    }
-    const task = paymentQueue.shift();
-    if (task) {
-      try {
-        await task();
-      } catch (err) {
-        console.error("Erro ao processar pagamento:", err);
+    while (runningTasks.size < MAX_CONCURRENCY && paymentQueue.length > 0) {
+      const task = paymentQueue.shift();
+      if (task) {
+        const p = task()
+          .catch(console.error)
+          .finally(() => runningTasks.delete(p));
+        runningTasks.add(p);
       }
+    }
+    if (paymentQueue.length === 0 && runningTasks.size === 0) {
+      await new Promise<void>((resolve) => (queueNotifier = resolve));
+    } else {
+      await new Promise((res) => setTimeout(res, 1));
     }
   }
 };
+
 processQueue();
 
 // ----------------------
