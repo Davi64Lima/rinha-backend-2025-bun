@@ -1,11 +1,17 @@
-import { CONFIG } from "./config"
+import { CONFIG } from "./config";
 const redis = Bun.redis;
 import { ProcessorType } from "./types";
+
+const TAXA_DEFAULT = 0.05; // 5%
+const TAXA_FALLBACK = 0.08; // 8%
 
 export const getHealthProcessor = async (): Promise<ProcessorType> => {
   const cachedProcessor = await redis.get("cachedProcessor");
 
-  if (cachedProcessor === ProcessorType.default || cachedProcessor === ProcessorType.fallback) {
+  if (
+    cachedProcessor === ProcessorType.default ||
+    cachedProcessor === ProcessorType.fallback
+  ) {
     return cachedProcessor as ProcessorType;
   }
 
@@ -15,17 +21,17 @@ export const getHealthProcessor = async (): Promise<ProcessorType> => {
     "1",
     "NX",
     "EX",
-    "3"
+    "3",
   ]);
 
   if (acquiredLock !== "OK") {
-  return ProcessorType.default;
-}
+    return ProcessorType.default;
+  }
 
   try {
     const [defaultResp, fallbackResp] = await Promise.all([
       fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/payments/service-health`),
-      fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/payments/service-health`)
+      fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/payments/service-health`),
     ]);
 
     const parseJsonSafe = async (resp: Response) => {
@@ -39,7 +45,7 @@ export const getHealthProcessor = async (): Promise<ProcessorType> => {
 
     const [defaultHealth, fallbackHealth] = await Promise.all([
       parseJsonSafe(defaultResp),
-      parseJsonSafe(fallbackResp)
+      parseJsonSafe(fallbackResp),
     ]);
 
     if (!defaultHealth || !fallbackHealth) {
@@ -47,15 +53,17 @@ export const getHealthProcessor = async (): Promise<ProcessorType> => {
     }
 
     let processor: ProcessorType;
-    if (defaultHealth.failing || fallbackHealth.minResponseTime < defaultHealth.minResponseTime) {
+
+    if (
+      defaultHealth.failing ||
+      fallbackHealth.minResponseTime < defaultHealth.minResponseTime
+    ) {
       processor = ProcessorType.fallback;
     } else {
       processor = ProcessorType.default;
     }
 
-    // TTL com leve jitter entre 5 e 7 segundos
-    const ttl = 5 + Math.floor(Math.random() * 3);
-    await redis.set("cachedProcessor", processor, "EX", ttl);
+    await redis.set("cachedProcessor", processor, "EX", 5);
 
     return processor;
   } catch (err) {

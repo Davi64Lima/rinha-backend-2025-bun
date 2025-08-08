@@ -10,9 +10,21 @@ import { getHealthProcessor } from "./health";
 // ----------------------
 
 const paymentQueue: (() => Promise<void>)[] = [];
+let queueNotifier: (() => void) | null = null;
+
+const enqueuePayment = (task: () => Promise<void>) => {
+  paymentQueue.push(task);
+  if (queueNotifier) {
+    queueNotifier();
+    queueNotifier = null;
+  }
+};
 
 const processQueue = async () => {
   while (true) {
+    if (paymentQueue.length === 0) {
+      await new Promise<void>((resolve) => (queueNotifier = resolve));
+    }
     const task = paymentQueue.shift();
     if (task) {
       try {
@@ -20,13 +32,10 @@ const processQueue = async () => {
       } catch (err) {
         console.error("Erro ao processar pagamento:", err);
       }
-    } else {
-      await new Promise((res) => setTimeout(res, 1)); // evita loop ocioso
     }
   }
 };
-
-processQueue(); // inicia o loop
+processQueue();
 
 // ----------------------
 // API HTTP
@@ -40,33 +49,32 @@ serve({
     // POST /payments
     if (req.method === "POST" && url.pathname === "/payments") {
       try {
-        const data = await req.json() as PaymentRequest;
+        const data = (await req.json()) as PaymentRequest;
+        enqueuePayment(async () => {
+          const payment = {
+            correlationId: data.correlationId,
+            amount: data.amount,
+            requestedAt: new Date().toISOString(),
+          };
 
-        if (!data.correlationId || !data.amount || typeof data.amount !== "number") {
-          return new Response("Invalid payload", { status: 400 });
-        }
-
-        const payment = {
-          correlationId: data.correlationId,
-          amount: data.amount,
-          requestedAt: new Date().toISOString()
-        };
-
-
-        paymentQueue.push(async () => {
           const processor = await getHealthProcessor();
-          const url = processor === ProcessorType.default
-            ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
-            : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
+          const url =
+            processor === ProcessorType.default
+              ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
+              : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
 
           const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payment),
           });
 
           if (response.ok) {
-            await logPayment(new Date(payment.requestedAt).getTime(), payment.amount, processor);
+            await logPayment(
+              new Date(payment.requestedAt).getTime(),
+              payment.amount,
+              processor
+            );
           }
         });
 
@@ -92,23 +100,22 @@ serve({
     // POST /purge-payments
     if (req.method === "POST" && url.pathname === "/purge-payments") {
       try {
-          await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
-            method: 'POST',
-            headers: { 'X-Rinha-Token': '123' }
-          })
+        await fetch(`${CONFIG.DEFAULT_PROCESSOR_URL}/admin/purge-payments`, {
+          method: "POST",
+          headers: { "X-Rinha-Token": "123" },
+        });
 
-          await fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
-            method: 'POST',
-            headers: { 'X-Rinha-Token': '123' }
-          })
+        await fetch(`${CONFIG.FALLBACK_PROCESSOR_URL}/admin/purge-payments`, {
+          method: "POST",
+          headers: { "X-Rinha-Token": "123" },
+        });
 
-          await redis.send("FLUSHALL", [])
-        
+        await redis.send("FLUSHALL", []);
 
-        return new Response('payments flush', { status: 202 });
+        return new Response("payments flush", { status: 202 });
       } catch (err) {
         console.error(err);
-        return new Response('internal server error', { status: 500 });
+        return new Response("internal server error", { status: 500 });
       }
     }
 
