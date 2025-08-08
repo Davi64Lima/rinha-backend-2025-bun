@@ -9,33 +9,104 @@ import { getHealthProcessor } from "./health";
 // Fila de pagamentos
 // ----------------------
 
-const paymentQueue: (() => Promise<void>)[] = [];
-let queueNotifier: (() => void) | null = null;
+const MAX_CONCURRENCY = 50;
 
-const enqueuePayment = (task: () => Promise<void>) => {
-  paymentQueue.push(task);
-  if (queueNotifier) {
-    queueNotifier();
-    queueNotifier = null;
+async function enqueuePayment(payment: any) {
+  await redis.rpush("payments:queue", JSON.stringify(payment));
+}
+
+async function acquireSemaphore() {
+  const permits = await redis.incr("payments:semaphore");
+  if (permits > MAX_CONCURRENCY) {
+    await redis.decr("payments:semaphore");
+    return false;
   }
-};
+  return true;
+}
 
-const processQueue = async () => {
+async function releaseSemaphore() {
+  await redis.decr("payments:semaphore");
+}
+
+async function getDynamicTimeout() {
+  const times = await redis.send("LRANGE", ["payments:metrics", "0", "99"]);
+  if (times.length === 0) return 80;
+  const avg = times.reduce((a, b) => a + Number(b), 0) / times.length;
+  return Math.min(Math.max(avg * 1.2, 50), 200);
+}
+
+async function processPayment(payment: any) {
+  const start = performance.now();
+
+  // Aqui sua lógica de integração com Payment Processor
+  const processor = await getHealthProcessor();
+  const url =
+    processor === ProcessorType.default
+      ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
+      : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payment),
+  });
+
+  if (response.ok) {
+    await logPayment(
+      new Date(payment.requestedAt).getTime(),
+      payment.amount,
+      processor
+    );
+  }
+
+  const elapsed = performance.now() - start;
+
+  await redis.lpush("payments:metrics", elapsed.toString());
+  await redis.send("LTRIM", ["payments:metrics", "0", "99"]);
+
+  return response.ok;
+}
+
+async function worker(queueKey: string) {
   while (true) {
-    if (paymentQueue.length === 0) {
-      await new Promise<void>((resolve) => (queueNotifier = resolve));
+    const gotLock = await acquireSemaphore();
+    if (!gotLock) {
+      await new Promise((r) => setTimeout(r, 1));
+      continue;
     }
-    const task = paymentQueue.shift();
-    if (task) {
-      try {
-        await task();
-      } catch (err) {
-        console.error("Erro ao processar pagamento:", err);
+
+    const job = await redis.lpop(queueKey);
+    if (!job) {
+      await releaseSemaphore();
+      await new Promise((r) => setTimeout(r, 1));
+      continue;
+    }
+
+    const payment = JSON.parse(job);
+    const timeout = await getDynamicTimeout();
+
+    let finished = false;
+    const timer = setTimeout(async () => {
+      if (!finished) {
+        await redis.rpush("payments:retry", JSON.stringify(payment));
+        await releaseSemaphore();
       }
+    }, timeout);
+
+    const ok = await processPayment(payment);
+    finished = true;
+    clearTimeout(timer);
+    await releaseSemaphore();
+
+    if (!ok) {
+      await redis.rpush("payments:retry", JSON.stringify(payment));
     }
   }
-};
-processQueue();
+}
+
+// Start workers for main and retry queues
+worker("payments:queue");
+worker("payments:retry");
 
 // ----------------------
 // API HTTP
@@ -50,33 +121,41 @@ serve({
     if (req.method === "POST" && url.pathname === "/payments") {
       try {
         const data = (await req.json()) as PaymentRequest;
-        enqueuePayment(async () => {
-          const payment = {
-            correlationId: data.correlationId,
-            amount: data.amount,
-            requestedAt: new Date().toISOString(),
-          };
 
-          const processor = await getHealthProcessor();
-          const url =
-            processor === ProcessorType.default
-              ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
-              : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
+        const payment = {
+          correlationId: data.correlationId,
+          amount: data.amount,
+          requestedAt: new Date().toISOString(),
+        };
 
-          const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payment),
-          });
+        await enqueuePayment(payment);
+        // enqueuePayment(async () => {
+        //   const payment = {
+        //     correlationId: data.correlationId,
+        //     amount: data.amount,
+        //     requestedAt: new Date().toISOString(),
+        //   };
 
-          if (response.ok) {
-            await logPayment(
-              new Date(payment.requestedAt).getTime(),
-              payment.amount,
-              processor
-            );
-          }
-        });
+        //   const processor = await getHealthProcessor();
+        //   const url =
+        //     processor === ProcessorType.default
+        //       ? `${CONFIG.DEFAULT_PROCESSOR_URL}/payments`
+        //       : `${CONFIG.FALLBACK_PROCESSOR_URL}/payments`;
+
+        //   const response = await fetch(url, {
+        //     method: "POST",
+        //     headers: { "Content-Type": "application/json" },
+        //     body: JSON.stringify(payment),
+        //   });
+
+        //   if (response.ok) {
+        //     await logPayment(
+        //       new Date(payment.requestedAt).getTime(),
+        //       payment.amount,
+        //       processor
+        //     );
+        //   }
+        // });
 
         return new Response(null, { status: 202 });
       } catch {
